@@ -26,7 +26,7 @@ A web application that connects to your Google Drive, extracts text from documen
 
 1. Clone this repository:
    ```bash
-   git clone https://github.com/yourusername/document-summarizer.git
+   [git clone https://github.com/hritick99/document-summarizer.git]
    cd document-summarizer
    ```
 
