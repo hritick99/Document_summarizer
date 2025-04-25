@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document Summarizer - Files</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.0/font/bootstrap-icons.css">
+    <style>
+        body {
+            padding-top: 2rem;
+            padding-bottom: 2rem;
+        }
+        .header {
+            padding-bottom: 1rem;
+            margin-bottom: 2rem;
+            border-bottom: 1px solid #e5e5e5;
+        }
+        .loading {
+            display: none;
+            text-align: center;
+            margin: 20px 0;
+        }
+        .spinner-border {
+            width: 3rem;
+            height: 3rem;
+        }
+        .file-row:hover {
+            background-color: #f8f9fa;
+        }
+        .summary-box {
+            background-color: #f8f9fa;
+            border-left: 4px solid #0d6efd;
+            padding: 15px;
+            margin-top: 10px;
+            border-radius: 4px;
+        }
+        .summary-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .actions {
+            white-space: nowrap;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Document Summaries</h1>
+            <p class="lead">View and summarize documents from your Google Drive folder.</p>
+            <a href="/" class="btn btn-outline-secondary">Back to Home</a>
+            <button id="summarizeAllBtn" class="btn btn-success ms-2">Summarize All Documents</button>
+            <a id="downloadAllBtn" href="/download-all-summaries" class="btn btn-primary ms-2">Download All Summaries</a>
+        </div>
+
+        <div id="loadingFiles" class="loading">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <p>Loading files from Google Drive...</p>
+        </div>
+
+        <div id="loadingSummaries" class="loading">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <p>Generating summaries... This may take a moment.</p>
+        </div>
+
+        <div class="alert alert-danger" id="errorAlert" style="display: none;">
+            <strong>Error:</strong> <span id="errorMessage"></span>
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-header">
+                Available Documents
+            </div>
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead>
+                        <tr>
+                            <th>Filename</th>
+                            <th>Type</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="filesList">
+                        <!-- Files will be listed here dynamically -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div id="summariesContainer">
+            <!-- Summaries will be displayed here -->
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const filesList = document.getElementById('filesList');
+            const summariesContainer = document.getElementById('summariesContainer');
+            const loadingFiles = document.getElementById('loadingFiles');
+            const loadingSummaries = document.getElementById('loadingSummaries');
+            const errorAlert = document.getElementById('errorAlert');
+            const errorMessage = document.getElementById('errorMessage');
+            const summarizeAllBtn = document.getElementById('summarizeAllBtn');
+
+            // Get file MIME type icon
+            function getFileIcon(mimeType) {
+                if (mimeType === 'application/pdf') {
+                    return '<i class="bi bi-file-earmark-pdf text-danger"></i>';
+                } else if (mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+                    return '<i class="bi bi-file-earmark-word text-primary"></i>';
+                } else if (mimeType === 'text/plain') {
+                    return '<i class="bi bi-file-earmark-text text-secondary"></i>';
+                } else {
+                    return '<i class="bi bi-file-earmark"></i>';
+                }
+            }
+
+            // Format file type for display
+            function formatFileType(mimeType) {
+                if (mimeType === 'application/pdf') {
+                    return 'PDF';
+                } else if (mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+                    return 'DOCX';
+                } else if (mimeType === 'text/plain') {
+                    return 'TXT';
+                } else {
+                    return mimeType;
+                }
+            }
+
+            // Handle errors
+            function showError(message) {
+                errorMessage.textContent = message;
+                errorAlert.style.display = 'block';
+                setTimeout(() => {
+                    errorAlert.style.display = 'none';
+                }, 5000);
+            }
+
+            // Fetch files from Google Drive
+            async function fetchFiles() {
+                loadingFiles.style.display = 'block';
+                
+                try {
+                    const response = await fetch('/list-files');
+                    if (!response.ok) {
+                        throw new Error('Failed to fetch files');
+                    }
+                    
+                    const files = await response.json();
+                    
+                    // Clear existing list
+                    filesList.innerHTML = '';
+                    
+                    // Filter for supported file types
+                    const supportedFiles = files.filter(file => 
+                        file.mimeType === 'application/pdf' || 
+                        file.mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || 
+                        file.mimeType === 'text/plain'
+                    );
+                    
+                    if (supportedFiles.length === 0) {
+                        filesList.innerHTML = '<tr><td colspan="3" class="text-center">No supported files found in the folder.</td></tr>';
+                    } else {
+                        supportedFiles.forEach(file => {
+                            const row = document.createElement('tr');
+                            row.className = 'file-row';
+                            row.innerHTML = `
+                                <td>
+                                    ${getFileIcon(file.mimeType)} 
+                                    ${file.name}
+                                </td>
+                                <td>${formatFileType(file.mimeType)}</td>
+                                <td class="actions">
+                                    <button class="btn btn-sm btn-primary summarize-btn" data-id="${file.id}">
+                                        Summarize
+                                    </button>
+                                    <a href="/download-summary/${file.id}" class="btn btn-sm btn-outline-secondary">
+                                        Download
+                                    </a>
+                                    ${file.webViewLink ? `
+                                        <a href="${file.webViewLink}" target="_blank" class="btn btn-sm btn-outline-info">
+                                            View
+                                        </a>
+                                    ` : ''}
+                                </td>
+                            `;
+                            filesList.appendChild(row);
+                        });
+                    }
+                } catch (error) {
+                    showError('Failed to load files: ' + error.message);
+                } finally {
+                    loadingFiles.style.display = 'none';
+                }
+            }
+
+            // Summarize a single file
+            async function summarizeFile(fileId) {
+                loadingSummaries.style.display = 'block';
+                
+                try {
+                    const response = await fetch(`/summarize/${fileId}`);
+                    if (!response.ok) {
+                        const errorData = await response.json();
+                        throw new Error(errorData.error || 'Failed to generate summary');
+                    }
+                    
+                    const data = await response.json();
+                    
+                    // Create a summary card
+                    const summaryElement = document.createElement('div');
+                    summaryElement.className = 'card mb-4';
+                    summaryElement.innerHTML = `
+                        <div class="card-header summary-header">
+                            <h5 class="mb-0">Summary: ${data.name}</h5>
+                            <div>
+                                <a href="/download-summary/${fileId}" class="btn btn-sm btn-outline-primary">
+                                    <i class="bi bi-download"></i> Download
+                                </a>
+                                ${data.link ? `
+                                    <a href="${data.link}" target="_blank" class="btn btn-sm btn-outline-secondary ms-1">
+                                        <i class="bi bi-box-arrow-up-right"></i> Open File
+                                    </a>
+                                ` : ''}
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <div class="summary-box">
+                                ${data.summary.replace(/\n/g, '<br>')}
+                            </div>
+                        </div>
+                    `;
+                    
+                    // Add to the container
+                    summariesContainer.prepend(summaryElement);
+                    
+                    // Scroll to the summary
+                    summaryElement.scrollIntoView({ behavior: 'smooth' });
+                    
+                } catch (error) {
+                    showError('Failed to summarize: ' + error.message);
+                } finally {
+                    loadingSummaries.style.display = 'none';
+                }
+            }
+
+            // Summarize all files
+            async function summarizeAllFiles() {
+                loadingSummaries.style.display = 'block';
+                summariesContainer.innerHTML = '';
+                
+                try {
+                    const response = await fetch('/summarize-all');
+                    if (!response.ok) {
+                        const errorData = await response.json();
+                        throw new Error(errorData.error || 'Failed to generate summaries');
+                    }
+                    
+                    const summaries = await response.json();
+                    
+                    if (summaries.length === 0) {
+                        summariesContainer.innerHTML = '<div class="alert alert-info">No summaries generated. Make sure you have supported files in your folder.</div>';
+                    } else {
+                        summaries.forEach(data => {
+                            const summaryElement = document.createElement('div');
+                            summaryElement.className = 'card mb-4';
+                            summaryElement.innerHTML = `
+                                <div class="card-header summary-header">
+                                    <h5 class="mb-0">Summary: ${data.name}</h5>
+                                    <div>
+                                        <a href="/download-summary/${data.id}" class="btn btn-sm btn-outline-primary">
+                                            <i class="bi bi-download"></i> Download
+                                        </a>
+                                        ${data.link ? `
+                                            <a href="${data.link}" target="_blank" class="btn btn-sm btn-outline-secondary ms-1">
+                                                <i class="bi bi-box-arrow-up-right"></i> Open File
+                                            </a>
+                                        ` : ''}
+                                    </div>
+                                </div>
+                                <div class="card-body">
+                                    <div class="summary-box">
+                                        ${data.summary.replace(/\n/g, '<br>')}
+                                    </div>
+                                </div>
+                            `;
+                            
+                            summariesContainer.appendChild(summaryElement);
+                        });
+                    }
+                    
+                } catch (error) {
+                    showError('Failed to summarize all files: ' + error.message);
+                } finally {
+                    loadingSummaries.style.display = 'none';
+                }
+            }
+            
+            // Event listeners
+            document.addEventListener('click', function(event) {
+                if (event.target.classList.contains('summarize-btn')) {
+                    const fileId = event.target.getAttribute('data-id');
+                    summarizeFile(fileId);
+                }
+            });
+            
+            summarizeAllBtn.addEventListener('click', summarizeAllFiles);
+            
+            // Load files on page load
+            fetchFiles();
+        });
+    </script>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
